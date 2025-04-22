@@ -2,19 +2,23 @@
 
 This repository contains a comprehensive suite of benchmarks for evaluating LLM serving systems. The suite includes multiple scenarios to test different aspects of model performance.
 
+The workload simulated in these benchmarks is a multi-round QA (question answering) task with multiple users interacting with an LLM engine concurrently. An illustration is shown below:
+
+![Illustration](figure.png)
+
 ## Available Benchmarks
 
 1. **ShareGPT Benchmark**
-   - Replays real-world conversations from ShareGPT
+   - Replays real-world conversations from [ShareGPT](https://huggingface.co/datasets/anon8231489123/ShareGPT_Vicuna_unfiltered)
    - Default QPS: 1.34
 
-2. **Short Input, Short Output**
+2. **Short Input, Short Output (Synthetic)**
    - System prompt: 0 tokens
    - Chat history: 256 tokens
    - Answer length: 20 tokens
    - Default QPS: 15
 
-3. **Long Input, Short Output**
+3. **Long Input, Short Output (Synthetic)**
    - System prompt: 1000 tokens
    - Chat history: 20000 tokens
    - Answer length: 100 tokens
@@ -92,7 +96,13 @@ The following environment variables can be configured:
   - Options: "all", "sharegpt", "short-input", "long-input"
 - `QPS_VALUES`: Space-separated list of QPS values to test (default: "1.34")
 
-## Building the Docker Image
+## Pulling a pre-built Docker Image
+
+```bash
+docker pull lmcache/lmcache-benchmark
+```
+
+## Building your own Docker Image
 
 ```bash
 docker build -t your-registry/benchmark:latest .
@@ -108,6 +118,8 @@ docker run -e MODEL="meta-llama/Llama-3.1-8B-Instruct" \
            -e QPS_VALUES="1.34 2.0 3.0" \
            -v /path/to/results:/app/results \
            your-registry/benchmark:latest
+
+# To use the pre-built image, replace <your-registry/benchmark:latest> with <lmcache/lmcache-benchmark>
 ```
 
 ## Running in Kubernetes

@@ -10,7 +10,23 @@ Repeat the same steps in the `8B` directory to serve the `Llama-3.1-8B-Instruct`
 
 ## vLLM v1 + LMCache
 
-Checkout and install `https://github.com/ApostaC/vllm/tree/local-dev/lmcache-v1-connector-clean`.
+To install vLLM v1:
+
+```bash
+git clone --branch local-dev/lmcache-v1-connector-clean https://github.com/ApostaC/vllm.git
+cd vllm
+VLLM_USE_PRECOMPILED=1 pip install --editable .
+```
+
+To install LMCache:
+
+```bash
+git clone https://github.com/LMCache/LMCache.git  
+cd LMCache  
+pip install -e .
+```
+
+Then run:
 
 ```bash
 bash start_router.sh
@@ -18,6 +34,16 @@ bash start_lmcache_v1.sh
 ```
 
 ## vLLM v1
+
+To install vLLM v1:
+
+```bash
+git clone --branch local-dev/lmcache-v1-connector-clean https://github.com/ApostaC/vllm.git
+cd vllm
+VLLM_USE_PRECOMPILED=1 pip install --editable .
+```
+
+Then run
 
 ```bash
 bash start_router.sh
@@ -41,6 +67,16 @@ kubectl port-forward svc/vllm-router-service 30080:80
 ```
 
 ## SGLang
+
+To install SGLang:
+
+```bash
+pip install --upgrade pip
+pip install uv
+uv pip install "sglang[all]>=0.4.5.post2"
+```
+
+Then run:
 
 ```bash
 bash start_router.sh

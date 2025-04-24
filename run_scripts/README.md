@@ -48,3 +48,38 @@ bash start_sglang.sh
 ```
 
 ## Dynamo
+
+To set up and launch the Dynamo engine deployments for benchmarking:
+1. Clone the repository and check out the specific commit:
+    ```bash
+    git clone https://github.com/ai-dynamo/dynamo.git
+    cd dynamo
+    git checkout 2972b7ed26231421e606658c344063d30e2e3862
+    ```
+2. Start the Docker environment:
+    ```bash
+    docker compose -f deploy/docker-compose.yml up -d
+    ./container/build.sh
+    ```
+
+3. Run the container (replace `<PATH TO DYNAMO>` with the absolute path to your cloned repo):
+    ```bash
+    ./container/run.sh -it --image zhuohangu/dynamo:latest-vllm -v <PATH TO DYNAMO>:/workspace/dynamo
+    ```
+
+4. Outside the container, copy the appropriate model config file into the dynamo/configs/ directory:
+    ```bash
+    cp LMBenchmark/run_scripts/8B/agg_router_8B.yaml dynamo/configs/   # For meta-llama/Llama-3.1-8B-Instruct
+    # or
+    cp LMBenchmark/run_scripts/70B/agg_router_70B.yaml dynamo/configs/  # For meta-llama/Llama-3.1-70B-Instruct
+    ```
+
+5. Inside the container, launch the vLLM engine deployments:
+    ```bash
+    cd /workspace/dynamo/examples/llm
+    dynamo serve graphs.agg_router:Frontend -f ./configs/agg_router_8B.yaml   # for meta-llama/Llama-3.1-8B-Instruct
+    # or
+    dynamo serve graphs.agg_router:Frontend -f ./configs/agg_router_70B.yaml  # for meta-llama/Llama-3.1-70B-Instruct
+    ```
+
+This will start a Dynamo-based router at http://localhost:8000/v1, serving either the Llama-3.1-8B or Llama-3.1-70B model, depending on the config you launch. You can now use this endpoint for benchmarking, just like with the other setups above.

@@ -21,6 +21,7 @@ else
 fi
 
 # CONFIGURATION
+NUM_USERS_WARMUP=20
 NUM_USERS=15
 NUM_ROUNDS=20
 
@@ -28,9 +29,32 @@ SYSTEM_PROMPT=1000 # Shared system prompt length
 CHAT_HISTORY=20000 # User specific chat history length
 ANSWER_LEN=100 # Generation length per round
 
+# init-user-id starts at 1, will add 20 each iteration
+INIT_USER_ID=1
+
+warmup() {
+    # Warm up the vLLM with a lot of user queries
+    python3 "${SCRIPT_DIR}/multi-round-qa.py" \
+        --num-users 1 \
+        --num-rounds 2 \
+        --qps 2 \
+        --shared-system-prompt $SYSTEM_PROMPT \
+        --user-history-prompt $CHAT_HISTORY \
+        --answer-len $ANSWER_LEN \
+        --model "$MODEL" \
+        --base-url "$BASE_URL" \
+        --init-user-id "$INIT_USER_ID" \
+        --output /tmp/warmup.csv \
+        --log-interval 30 \
+        --time $((NUM_USERS_WARMUP / 2))
+}
+
 run_benchmark() {
     # $1: qps
     # $2: output file
+
+    warmup
+
     python3 "${SCRIPT_DIR}/multi-round-qa.py" \
         --num-users $NUM_USERS \
         --num-rounds $NUM_ROUNDS \
@@ -40,9 +64,15 @@ run_benchmark() {
         --answer-len $ANSWER_LEN \
         --model "$MODEL" \
         --base-url "$BASE_URL" \
+        --init-user-id "$INIT_USER_ID" \
         --output "$2" \
         --log-interval 30 \
         --time 100
+
+    sleep 10
+
+    # increment init-user-id by NUM_USERS_WARMUP
+    INIT_USER_ID=$(( INIT_USER_ID + NUM_USERS_WARMUP ))
 }
 
 # Run benchmarks for the specified QPS values

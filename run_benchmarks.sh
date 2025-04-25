@@ -72,8 +72,6 @@ run_short_input() {
 # Function to run long input benchmark
 run_long_input() {
     echo "Running long input benchmark..."
-    # First run warmup
-    "${SCRIPT_DIR}/synthetic-multi-round-qa/long_input_short_output_warmup.sh" "$MODEL" "$BASE_URL"
     
     # Then run the actual benchmark
     if [ ${#QPS_VALUES[@]} -eq 0 ]; then

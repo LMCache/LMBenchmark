@@ -149,6 +149,7 @@ class RequestExecutor:
                 messages=messages,
                 stream=True,
                 max_tokens=max_tokens,
+                temperature=0.0,
                 stream_options={"include_usage": True},
                 extra_headers=extra_headers,
             )
@@ -160,17 +161,19 @@ class RequestExecutor:
                     
                 # Handle content
                 if chunk.choices[0].delta.content is not None:
-                    if first_token_time is None:
+                    if first_token_time is None and chunk.choices[0].delta.content != "":
                         first_token_time = time.time()
                     words += chunk.choices[0].delta.content
                 
-                # Handle token counts if available
-                if hasattr(chunk, 'usage') and chunk.usage is not None:
-                    tokens_out = chunk.usage.completion_tokens
-                    tokens_prefill = chunk.usage.prompt_tokens
+            # Handle token counts if available
+            if hasattr(chunk, 'usage') and chunk.usage is not None:
+                tokens_out = chunk.usage.completion_tokens
+                tokens_prefill = chunk.usage.prompt_tokens
 
             # If we didn't get token counts from streaming, try to get them from the final response
             if tokens_out == 0 or tokens_prefill == 0:
+                print("No token counts from streaming, getting final response")
+                print(f"{tokens_out}, {tokens_prefill}")
                 try:
                     final_response = await self.client.chat.completions.create(
                         model=self.model,
@@ -183,7 +186,7 @@ class RequestExecutor:
                 except Exception as e:
                     logging.warning(f"Failed to get token counts from final response: {e}")
 
-            # Calculate timing metrics
+            # # Calculate timing metrics
             ttft = first_token_time - start_time if first_token_time else 0
             generation_time = time.time() - first_token_time if first_token_time else 0
 
@@ -434,8 +437,6 @@ class UserSessionManager:
         self.need_ramp_up = False
 
     def _create_user_session(self):
-        if len(self.sessions) >= self.workload_config.num_users:
-            return None
         self.user_id += 1
         user_config = UserConfig.new_user_config(self.user_id, self.workload_config)
         if self.use_sharegpt:

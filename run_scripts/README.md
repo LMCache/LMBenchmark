@@ -90,8 +90,14 @@ To set up and launch the Dynamo engine deployments for benchmarking:
     ```bash
     git clone https://github.com/ai-dynamo/dynamo.git
     cd dynamo
+
+    # For vLLM 0.7.2
     git checkout 2972b7ed26231421e606658c344063d30e2e3862
+    
+    # For vLLM 0.8.4 (V0)
+    git checkout 183941fae1250a658807eb9f88076de857d69750
     ```
+
 2. Start the Docker environment:
     ```bash
     docker compose -f deploy/docker-compose.yml up -d
@@ -105,17 +111,24 @@ To set up and launch the Dynamo engine deployments for benchmarking:
 
 4. Outside the container, copy the appropriate model config file into the dynamo/configs/ directory:
     ```bash
-    cp LMBenchmark/run_scripts/8B/agg_router_8B.yaml dynamo/configs/   # For meta-llama/Llama-3.1-8B-Instruct
-    # or
-    cp LMBenchmark/run_scripts/70B/agg_router_70B.yaml dynamo/configs/  # For meta-llama/Llama-3.1-70B-Instruct
+    # For meta-llama/Llama-3.1-8B-Instruct
+    cp LMBenchmark/run_scripts/8B/agg_router_8B_<VERSION>.yaml dynamo/configs/
+
+    # For meta-llama/Llama-3.1-70B-Instruct
+    cp LMBenchmark/run_scripts/70B/agg_router_70B_<VERSION>.yaml dynamo/configs/
     ```
+
+    > 💡 Set `<VERSION>` to `0.7.2` or `0.8.4` depending on the commit you checked out. Use the same version string in the following steps.
 
 5. Inside the container, launch the vLLM engine deployments:
     ```bash
     cd /workspace/dynamo/examples/llm
-    dynamo serve graphs.agg_router:Frontend -f ./configs/agg_router_8B.yaml   # for meta-llama/Llama-3.1-8B-Instruct
-    # or
-    dynamo serve graphs.agg_router:Frontend -f ./configs/agg_router_70B.yaml  # for meta-llama/Llama-3.1-70B-Instruct
+    
+    # For meta-llama/Llama-3.1-8B-Instruct
+    dynamo serve graphs.agg_router:Frontend -f ./configs/agg_router_8B_<VERSION>.yaml
+
+    # For meta-llama/Llama-3.1-70B-Instruct
+    dynamo serve graphs.agg_router:Frontend -f ./configs/agg_router_70B_<VERSION>.yaml
     ```
 
 This will start a Dynamo-based router at http://localhost:8000/v1, serving either the Llama-3.1-8B or Llama-3.1-70B model, depending on the config you launch. You can now use this endpoint for benchmarking, just like with the other setups above.

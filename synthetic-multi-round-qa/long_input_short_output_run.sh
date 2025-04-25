@@ -52,6 +52,9 @@ warmup() {
 run_benchmark() {
     # $1: qps
     # $2: output file
+
+    warmup
+
     python3 "${SCRIPT_DIR}/multi-round-qa.py" \
         --num-users $NUM_USERS \
         --num-rounds $NUM_ROUNDS \

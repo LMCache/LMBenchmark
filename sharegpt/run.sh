@@ -25,7 +25,7 @@ warm_up() {
     # $2: output file
 
     python3 "${SCRIPT_DIR}/sharegpt-qa.py" \
-        --qps 2 \
+        --qps "$1" \
         --model "$MODEL" \
         --base-url "$BASE_URL" \
         --output /tmp/warmup.csv \
@@ -34,8 +34,6 @@ warm_up() {
 
     sleep 10
 }
-
-warm_up
 
 run_benchmark() {
     # $1: qps
@@ -48,7 +46,6 @@ run_benchmark() {
         --base-url "$BASE_URL" \
         --output "$2" \
         --log-interval 30 \
-        --time 100 \
         --sharegpt-file "${SCRIPT_DIR}/run.json"
 
     sleep 10
@@ -57,5 +54,6 @@ run_benchmark() {
 # Run benchmarks for the specified QPS values
 for qps in "${QPS_VALUES[@]}"; do
     output_file="${KEY}_output_${qps}.csv"
+    warm_up "$qps"
     run_benchmark "$qps" "$output_file"
 done

@@ -15,7 +15,7 @@ import logging
 import time
 from dataclasses import dataclass
 from typing import List, Optional
-
+import random
 import openai
 import pandas as pd
 
@@ -154,7 +154,7 @@ class BenchmarkRunner:
                 continue
 
             entry = self.prompts[self._next_idx]
-            prompt = entry["input"]
+            prompt = str(self.qps) + " " + entry["input"] # To avoid cache hit cross run
             max_tokens = entry.get("output_length", 1)
             self.executor.launch_request(prompt, max_tokens, self._on_finish)
             self._next_idx += 1

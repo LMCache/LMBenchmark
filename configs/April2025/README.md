@@ -132,3 +132,7 @@ To set up and launch the Dynamo engine deployments for benchmarking:
     ```
 
 This will start a Dynamo-based router at http://localhost:8000/v1, serving either the Llama-3.1-8B or Llama-3.1-70B model, depending on the config you launch. You can now use this endpoint for benchmarking, just like with the other setups above.
+
+# Model Selection
+
+For ShareGPT and short-input-short-output traces, use the 70B model with 2*A100 (80G). For the long-input-long-output trace, use the 8B model with 1*A100 (40G).

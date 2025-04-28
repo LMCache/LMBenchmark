@@ -148,3 +148,11 @@ The benchmark results will be saved in the mounted volume with the following str
 - `{SAVE_FILE_KEY}_long_input_qps{X}.csv` for long input benchmarks
 
 Where `X` is the QPS value used for that run. 
+
+## Reproduce our results
+
+To reproduce results from our latest benchmarking runs against other open-source LLM serving systems, please refer to the configuration scripts inside the folders in the [configs](configs) directory.
+
+Latest results:
+
+* [April 2025](configs/April2025/)

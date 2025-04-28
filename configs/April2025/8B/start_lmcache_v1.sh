@@ -1,0 +1,1 @@
+LMCACHE_CONFIG_FILE=example.yaml VLLM_USE_V1=1 LMCACHE_USE_EXPERIMENTAL=True VLLM_ENABLE_V1_MULTIPROCESSING=1 VLLM_WORKER_MULTIPROC_METHOD=spawn vllm serve meta-llama/Llama-3.1-8B-Instruct --port 8100 --disable-log-requests                --kv-transfer-config '{"kv_connector":"LMCacheConnectorV1","kv_role":"kv_both","kv_connector_extra_config": {}}' --max-model-len 32000 

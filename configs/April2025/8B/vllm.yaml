@@ -1,0 +1,31 @@
+servingEngineSpec:
+  runtimeClassName: ""
+  modelSpec:
+  - name: "llama3"
+    repository: "lmcache/vllm-openai"
+    tag: "2025-03-28"
+    modelURL: "meta-llama/Llama-3.1-8B-Instruct"
+    replicaCount: 1
+    requestCPU: 10
+    requestMemory: "80Gi"
+    requestGPU: 1
+    pvcStorage: "50Gi"
+    pvcAccessMode:
+      - ReadWriteOnce
+    vllmConfig:
+      enableChunkedPrefill: false
+      enablePrefixCaching: true
+      maxModelLen: 32000
+      dtype: "bfloat16"
+      extraArgs: ["--disable-log-requests", "--swap-space", 0]
+    hf_token: <YOUR HF TOKEN>
+
+routerSpec:
+  resources:
+    requests:
+      cpu: "2"
+      memory: "8G"
+    limits:
+      cpu: "2"
+      memory: "8G"
+  routingLogic: "roundrobin"

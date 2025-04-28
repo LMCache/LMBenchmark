@@ -10,7 +10,8 @@ if [[ $# -lt 3 ]]; then
     echo "  sharegpt        - ShareGPT benchmark"
     echo "  short-input     - Short input, short output benchmark"
     echo "  long-input      - Long input, short output benchmark"
-    echo "  all            - Run all benchmarks"
+    echo "  long-long       - Long input, long output benchmark"
+    echo "  all             - Run all benchmarks"
     echo ""
     echo "Examples:"
     echo "  # Run all benchmarks with default QPS"
@@ -31,7 +32,7 @@ QPS_VALUES=()
 found_scenarios=true
 
 for arg in "${@:4}"; do
-    if [[ "$arg" == "sharegpt" || "$arg" == "short-input" || "$arg" == "long-input" || "$arg" == "all" ]]; then
+    if [[ "$arg" == "sharegpt" || "$arg" == "short-input" || "$arg" == "long-input" || "$arg" == "long-long" || "$arg" == "all" ]]; then
         SCENARIOS+=("$arg")
     else
         found_scenarios=false
@@ -81,6 +82,16 @@ run_long_input() {
     fi
 }
 
+# Function to run long-long benchmark
+run_long_long() {
+    echo "Running long-long benchmark..."
+    if [ ${#QPS_VALUES[@]} -eq 0 ]; then
+        "${SCRIPT_DIR}/synthetic-multi-round-qa/long_input_long_output.sh" "$MODEL" "$BASE_URL" "${KEY}_long_long"
+    else
+        "${SCRIPT_DIR}/synthetic-multi-round-qa/long_input_long_output.sh" "$MODEL" "$BASE_URL" "${KEY}_long_long" "${QPS_VALUES[@]}"
+    fi
+}
+
 # Run selected scenarios
 for scenario in "${SCENARIOS[@]}"; do
     case "$scenario" in
@@ -92,6 +103,9 @@ for scenario in "${SCENARIOS[@]}"; do
             ;;
         "long-input")
             run_long_input
+            ;;
+        "long-long")
+            run_long_long
             ;;
         "all")
             run_sharegpt

@@ -1,1 +1,0 @@
-VLLM_USE_V1=1 VLLM_ENABLE_V1_MULTIPROCESSING=1 VLLM_WORKER_MULTIPROC_METHOD=spawn vllm serve meta-llama/Llama-3.1-70B-Instruct --port 8100 --disable-log-requests --max-model-len 20000 --gpu-memory-utilization 0.95 --tensor-parallel-size 2 

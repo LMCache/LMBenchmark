@@ -1,1 +1,0 @@
-python -m sglang.launch_server --model-path meta-llama/Llama-3.1-70B-Instruct --host 0.0.0.0 --context-length 20000 --port 8100 --mem-fraction-static 0.95 --tp 2 --enable-p2p-check --max-running-requests 100

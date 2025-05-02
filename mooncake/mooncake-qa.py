@@ -122,9 +122,18 @@ class Response:
 
 
 class RequestExecutor:
-    def __init__(self, base_url: str, api_key: str, model: str):
-        self.client = openai.AsyncOpenAI(api_key=api_key, base_url=base_url)
+    def __init__(self, base_url: str, model: str):
+        # Ensure base_url ends with /v1
+        if not base_url.endswith('/v1'):
+            base_url = base_url.rstrip('/') + '/v1'
+        
+        # For vLLM server, we don't need an API key, but the client requires one
+        self.client = openai.AsyncOpenAI(
+            api_key="EMPTY",  # Dummy API key for vLLM server
+            base_url=base_url
+        )
         self.model = model
+        logging.info(f"Initialized OpenAI client with base_url={base_url} and model={model}")
         self.loop = AsyncLoopWrapper.GetOrStartLoop()
         self.request_history = []
 

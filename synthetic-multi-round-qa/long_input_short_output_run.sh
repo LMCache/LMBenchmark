@@ -21,16 +21,18 @@ else
 fi
 
 # CONFIGURATION
-NUM_USERS_WARMUP=20
-NUM_USERS=15
-NUM_ROUNDS=20
+NUM_USERS_WARMUP="${NUM_USERS_WARMUP:-20}"
+NUM_USERS="${NUM_USERS:-15}"
+NUM_ROUNDS="${NUM_ROUNDS:-20}"
 
-SYSTEM_PROMPT=1000 # Shared system prompt length
-CHAT_HISTORY=20000 # User specific chat history length
-ANSWER_LEN=100 # Generation length per round
+SYSTEM_PROMPT="${SYSTEM_PROMPT:-1000}" # Shared system prompt length
+CHAT_HISTORY="${CHAT_HISTORY:-20000}" # User specific chat history length
+ANSWER_LEN="${ANSWER_LEN:-100}" # Gene ration length per round
 
 # init-user-id starts at 1, will add 20 each iteration
-INIT_USER_ID=1
+INIT_USER_ID="${INIT_USER_ID:-1}"
+
+TEST_DURATION="${TEST_DURATION:-100}" # Duration of the test in seconds
 
 warmup() {
     # Warm up the vLLM with a lot of user queries
@@ -67,7 +69,7 @@ run_benchmark() {
         --init-user-id "$INIT_USER_ID" \
         --output "$2" \
         --log-interval 30 \
-        --time 100
+        --time "$TEST_DURATION"
 
     sleep 10
 

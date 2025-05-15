@@ -5,6 +5,8 @@ import logging
 import time
 from dataclasses import dataclass
 from typing import Optional, List, Dict
+import random
+import os
 
 import openai
 import pandas as pd
@@ -143,28 +145,57 @@ class RequestExecutor:
             start_time = time.time()
             first_token_time = None
 
-            # Make the request
-            response = await self.client.chat.completions.create(
-                model=self.model,
-                messages=messages,
-                stream=True,
-                max_tokens=max_tokens,
-                temperature=0.0,
-                stream_options={"include_usage": True},
-                extra_headers=extra_headers,
-            )
+            # Check if we should use chat completions API
+            use_chat_completions = os.environ.get("USE_CHAT_COMPLETIONS", "False").lower() == "true"
+            
+            if use_chat_completions:
+                # Use chat.completions API
+                response = await self.client.chat.completions.create(
+                    model=self.model,
+                    messages=messages,
+                    stream=True,
+                    max_tokens=max_tokens,
+                    temperature=0.0,
+                    stream_options={"include_usage": True},
+                    extra_headers=extra_headers,
+                )
 
-            # Process the streaming response
-            async for chunk in response:
-                if not chunk.choices:
-                    continue
-                    
-                # Handle content
-                if chunk.choices[0].delta.content is not None:
-                    if first_token_time is None and chunk.choices[0].delta.content != "":
-                        first_token_time = time.time()
-                    words += chunk.choices[0].delta.content
+                # Process the streaming response
+                async for chunk in response:
+                    if not chunk.choices:
+                        continue
+                        
+                    # Handle content
+                    if chunk.choices[0].delta.content is not None:
+                        if first_token_time is None and chunk.choices[0].delta.content != "":
+                            first_token_time = time.time()
+                        words += chunk.choices[0].delta.content
+            else:
+                # Use completions API
+                # Convert messages to a prompt string
+                prompt = "\n".join([f"{msg['role'].upper()}: {msg['content']}" for msg in messages])
                 
+                response = await self.client.completions.create(
+                    model=self.model,
+                    prompt=prompt,
+                    stream=True,
+                    max_tokens=max_tokens,
+                    temperature=0.0,
+                    stream_options={"include_usage": True},
+                    extra_headers=extra_headers,
+                )
+                
+                # Process the streaming response
+                async for chunk in response:
+                    if not chunk.choices:
+                        continue
+                        
+                    # Handle content
+                    if chunk.choices[0].text:
+                        if first_token_time is None:
+                            first_token_time = time.time()
+                        words += chunk.choices[0].text
+            
             # Handle token counts if available
             if hasattr(chunk, 'usage') and chunk.usage is not None:
                 tokens_out = chunk.usage.completion_tokens
@@ -175,11 +206,20 @@ class RequestExecutor:
                 print("No token counts from streaming, getting final response")
                 print(f"{tokens_out}, {tokens_prefill}")
                 try:
-                    final_response = await self.client.chat.completions.create(
-                        model=self.model,
-                        messages=messages,
-                        stream=False,
-                    )
+                    if use_chat_completions:
+                        final_response = await self.client.chat.completions.create(
+                            model=self.model,
+                            messages=messages,
+                            stream=False,
+                        )
+                    else:
+                        prompt = "\n".join([f"{msg['role'].upper()}: {msg['content']}" for msg in messages])
+                        final_response = await self.client.completions.create(
+                            model=self.model,
+                            prompt=prompt,
+                            stream=False,
+                        )
+                        
                     if hasattr(final_response, 'usage') and final_response.usage is not None:
                         tokens_out = final_response.usage.completion_tokens
                         tokens_prefill = final_response.usage.prompt_tokens

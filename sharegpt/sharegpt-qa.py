@@ -18,6 +18,7 @@ from typing import List, Optional
 import random
 import openai
 import pandas as pd
+import os
 
 from utils import AsyncLoopWrapper, init_logger
 
@@ -82,26 +83,50 @@ class RequestExecutor:
         body = ""
 
         try:
-            # Concatenate all messages with role labels
-            prompt = "\n".join([f"{msg['role'].upper()}: {msg['content']}" for msg in messages])
+            # Check if we should use chat completions API
+            use_chat_completions = os.environ.get("USE_CHAT_COMPLETIONS", "False").lower() == "true"
             
-            stream = await self.client.completions.create(
-                prompt=prompt,
-                model=self.model,
-                temperature=0,
-                stream=True,
-                max_tokens=max_tokens,
-                stream_options={"include_usage": True},
-            )
-
-            async for chunk in stream:
-                if not chunk.choices:
-                    continue
-                delta = chunk.choices[0].text
-                if delta:
-                    if first_token is None:
-                        first_token = time.time()
-                    body += delta
+            if use_chat_completions:
+                # Use chat.completions API
+                stream = await self.client.chat.completions.create(
+                    messages=messages,
+                    model=self.model,
+                    temperature=0,
+                    stream=True,
+                    max_tokens=max_tokens,
+                    stream_options={"include_usage": True},
+                )
+                
+                async for chunk in stream:
+                    if not chunk.choices:
+                        continue
+                    delta = chunk.choices[0].delta.content
+                    if delta:
+                        if first_token is None:
+                            first_token = time.time()
+                        body += delta
+            else:
+                # Use completions API
+                # Concatenate all messages with role labels
+                prompt = "\n".join([f"{msg['role'].upper()}: {msg['content']}" for msg in messages])
+                
+                stream = await self.client.completions.create(
+                    prompt=prompt,
+                    model=self.model,
+                    temperature=0,
+                    stream=True,
+                    max_tokens=max_tokens,
+                    stream_options={"include_usage": True},
+                )
+                
+                async for chunk in stream:
+                    if not chunk.choices:
+                        continue
+                    delta = chunk.choices[0].text
+                    if delta:
+                        if first_token is None:
+                            first_token = time.time()
+                        body += delta
 
             usage = chunk.usage  # type: ignore[attr-defined]
             return Response(

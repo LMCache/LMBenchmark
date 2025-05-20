@@ -16,63 +16,26 @@ logger = init_logger(__name__, logging.INFO)
 
 @dataclass
 class WorkloadConfig:
-    # Length of shared system prompt
-    system_prompt_len: int
-
-    # Length of the user-specific data
-    user_info_len: int
-
-    # Length of the answer in one round
-    answer_len: int
-
-    # Number of rounds in the conversation
-    num_rounds: int
-
-    # Model name
+    num_agents: int
     model: List[str]
-
     user_request_interval: float
     new_user_interval: float
-    num_agents: int
-    whole_history: bool
-    trace_file: Optional[str] = None
+    trace_file: List[str]
 
 
 @dataclass
 class UserConfig:
-    # User id
     user_id: int
-
-    # System prompt length
-    system_prompt_len: int
-
-    # Length of the user-specific data
-    user_info_len: int
-
-    # Answer length
-    answer_len: int
-
-    # Gap between two requests
-    gap_between_requests: int
-
-    # Num rounds
-    num_rounds: int
-
     num_agents: int
-    whole_history: bool
+    gap_between_requests: int
     trace: Any
 
     @staticmethod
     def new_user_config(user_id: int, workload_config: WorkloadConfig, trace) -> "UserConfig":
         return UserConfig(
             user_id=user_id,
-            system_prompt_len=workload_config.system_prompt_len,
-            user_info_len=workload_config.user_info_len,
-            answer_len=workload_config.answer_len,
-            gap_between_requests=workload_config.user_request_interval,
-            num_rounds=workload_config.num_rounds,
             num_agents=workload_config.num_agents,
-            whole_history=workload_config.whole_history,
+            gap_between_requests=workload_config.user_request_interval,
             trace=trace,
         )
 
@@ -84,23 +47,33 @@ class ChatHistory:
     ):
         self.history = []
 
-    def on_user_query(self, query: str):
-        if len(self.history) == 0:
-            self.history.append({"role": "user", "content": query})
-        else:
-            assert self.history[-1]["role"] == "assistant", "Expect system response"
-            self.history.append({"role": "user", "name": "user", "content": query})
+    def on_user_query(self, query: str, agentID: int, roundID: int):
+        self.history.append({"role": "user", "name": f"agent{agentID}-{roundID}", "content": query})
 
-    def on_system_response_whole(self, response: str, agentID: int):
+    def on_system_response(self, response: str, agentID: int, roundID: int):
         assert len(self.history) > 0, "Expect user query"
-        self.history.append({"role": "assistant", "name": "agent"+f"{agentID}", "content": response})
+        self.history.append({"role": "assistant", "name": f"agent{agentID}-{roundID}", "content": response})
 
-    def on_system_response_part(self, response: str, agentID: int):
-        self.history = []
-        self.history.append({"role": "assistant", "name": "agent"+f"{agentID}", "content": response})
-
-    def get_messages_for_openai(self):
-        return self.history
+    def get_messages_for_openai(self, input_from: List, agentID: int, roundID: int):
+        messages = []
+        for i_f in input_from:
+            name = f"agent{i_f[1]}-{i_f[0]}"
+            if i_f[2] in ("input", "both"):
+                messages.extend(
+                    [entry for entry in self.history
+                     if entry["role"] == "user" and entry["name"] == name]
+                )
+            if i_f[2] in ("output", "both"):
+                messages.extend(
+                    [entry for entry in self.history
+                     if entry["role"] == "assistant" and entry["name"] == name]
+                )   
+        name = f"agent{agentID}-{roundID}"
+        messages.extend(  
+            [entry for entry in self.history
+             if entry["role"] == "user" and entry["name"] == name]
+        )
+        return messages
 
     def __len__(self):
         return len(self.history)
@@ -120,18 +93,16 @@ class Response:
 
 class RequestExecutor:
 
-    def __init__(self, base_url: str, model: List[str]):
-        # Ensure base_url ends with /v1
-        if not base_url.endswith('/v1'):
-            base_url = base_url.rstrip('/') + '/v1'
-        
-        # For vLLM server, we don't need an API key, but the client requires one
-        self.client = openai.AsyncOpenAI(
-            api_key="EMPTY",  # Dummy API key for vLLM server
-            base_url=base_url
-        )
+    def __init__(self, base_url: List[str], model: List[str]):
+        self.client = []
+        for bu in base_url:
+            if not bu.endswith('/v1'):
+                bu = bu.rstrip('/') + '/v1'
+            self.client.append(openai.AsyncOpenAI(
+                api_key="EMPTY",  # Dummy API key for vLLM server
+                base_url=bu
+            ))
         self.model = model
-        logging.info(f"Initialized OpenAI client with base_url={base_url} and model={model}")
         self.loop = AsyncLoopWrapper.GetOrStartLoop()
         self.request_history = []
 
@@ -149,7 +120,7 @@ class RequestExecutor:
             first_token_time = None
 
             # Make the request
-            response = await self.client.chat.completions.create(
+            response = await self.client[agentID].chat.completions.create(
                 model=model,
                 messages=messages,
                 stream=True,
@@ -175,23 +146,7 @@ class RequestExecutor:
                 tokens_out = chunk.usage.completion_tokens
                 tokens_prefill = chunk.usage.prompt_tokens
 
-            # If we didn't get token counts from streaming, try to get them from the final response
-            if tokens_out == 0 or tokens_prefill == 0:
-                print("No token counts from streaming, getting final response")
-                print(f"{tokens_out}, {tokens_prefill}")
-                try:
-                    final_response = await self.client.chat.completions.create(
-                        model=model,
-                        messages=messages,
-                        stream=False,
-                    )
-                    if hasattr(final_response, 'usage') and final_response.usage is not None:
-                        tokens_out = final_response.usage.completion_tokens
-                        tokens_prefill = final_response.usage.prompt_tokens
-                except Exception as e:
-                    logging.warning(f"Failed to get token counts from final response: {e}")
-
-            # # Calculate timing metrics
+            # Calculate timing metrics
             ttft = first_token_time - start_time if first_token_time else 0
             generation_time = time.time() - first_token_time if first_token_time else 0
 
@@ -217,12 +172,14 @@ class RequestExecutor:
         max_tokens: int,
         finish_callback,
         agentID: int,
+        roundID: int,
+        input: str,
         extra_headers=None,
     ):
         """
         finish_callback: Callable[[Response, int], None]
         """
-        real_callback = lambda x: finish_callback(x.result(), agentID)
+        real_callback = lambda x: finish_callback(x.result(), agentID, roundID, input)
         future = asyncio.run_coroutine_threadsafe(
             self._async_launch_request(messages, max_tokens, agentID, extra_headers), self.loop
         )
@@ -235,9 +192,9 @@ class UserSession:
         self.user_config = user_config
         self.last_request_time = None
         self.chat_history = ChatHistory()
-        self.question_id = 0
+        self.round_id = 0
 
-        self.has_unfinished_request = False
+        self.has_unfinished_request = 0
         self.last_unfinished_log = 0
 
         self.prompt_lengths = []
@@ -250,9 +207,9 @@ class UserSession:
         self.finished = False
 
         self.agentIDs = []
+        self.roundIDs = []
         self.inputs = []
         self.outputs = []
-
 
     def _update_result(self, response: Response):
         self.prompt_lengths.append(response.prompt_tokens)
@@ -264,115 +221,65 @@ class UserSession:
         self.agentIDs.append(response.agentID)
         self.outputs.append(response.body)
 
-    def _build_system_prompt(self):
+    def _launch_new_request(self, timestamp: float, request_executor: RequestExecutor, request_id: int):
+        agentID = self.user_config.trace[self.round_id]['agent_id'][request_id]
+        max_tokens = self.user_config.trace[self.round_id]['output_tokens'][request_id]
+        input_from = self.user_config.trace[self.round_id]['input_from'][request_id]
 
-        def gen_dummy_text(length):
-            return " ".join(["hi"] * length)
-
-        dummy_text_sys = gen_dummy_text(self.user_config.system_prompt_len)
-        dummy_text_user = gen_dummy_text(self.user_config.user_info_len)
-        system_prompt = (
-            f"Hi, here's some system prompt: {dummy_text_sys}."
-            + f"For user {self.user_config.user_id}, "
-            + f"here are some other context: {dummy_text_user}."
-        )
-        return system_prompt
-
-    def _build_new_question(self):
-        self.question_id += 1
-        return (
-            f"Here's question #{self.question_id}: can you tell me "
-            + "a new long story with a happy ending?"
-        )
-
-    def _launch_new_request(self, timestamp: float, request_executor: RequestExecutor):
-        agentID = self.question_id % self.user_config.num_agents
-        if self.user_config.trace is None:
-            prompt = self._build_new_question()
-            if len(self.chat_history) == 0:
-                prompt = self._build_system_prompt() + prompt
-            max_tokens = self.user_config.answer_len
-        else:
-            round_id = self.question_id // self.user_config.num_agents + 1
-            prompt = self.user_config.trace[f"round{round_id}"][f"{agentID}_input"]
-            max_tokens = self.user_config.trace[f"round{round_id}"][f"{agentID}_max_tokens"]
-            self.question_id += 1
-        self.chat_history.on_user_query(prompt)
-        logger.debug(
-            f"User {self.user_config.user_id} issues request {self.question_id}"
-        )
-        messages = self.chat_history.get_messages_for_openai()
-        self.inputs.append(messages.copy()) 
+        self.chat_history.on_user_query("hihihihihi", agentID, self.round_id)
+        messages = self.chat_history.get_messages_for_openai(input_from, agentID, self.round_id)
         request_executor.launch_request(
             messages,
             max_tokens,
             self._on_request_finished,
             agentID,
+            self.round_id,
+            messages.copy(),
             extra_headers={"x-user-id": str(self.user_config.user_id)},
         )
-        self.has_unfinished_request = True
+        self.has_unfinished_request += 1
         self.last_request_time = timestamp
 
-    def _on_request_finished(self, response: Response, agentID: int):
-        if self.user_config.whole_history:
-            self.chat_history.on_system_response_whole(response.body, agentID)
-        else:
-            self.chat_history.on_system_response_part(
-                response.body, agentID
-            )
-        self.has_unfinished_request = False
+    def _on_request_finished(self, response: Response, agentID: int, roundID: int, messages: str):
+        self.chat_history.on_system_response(response.body, agentID, roundID)
+        self.has_unfinished_request -= 1
         logger.debug(
             f"User {self.user_config.user_id} finished one request. "
             f"Prompt tokens: {response.prompt_tokens}, "
             f"generation tokens: {response.generation_tokens}"
         )
         self._update_result(response)
-
-    def set_internal_state(self, offset: float, timestamp: float):
-        """Tell the session is the 'offset' seconds after the start"""
-        assert len(self.chat_history) == 0, (
-            "Internal state should be set " "before the first request"
-        )
-
-        num_passed_questions = int(offset / self.user_config.gap_between_requests) + 1
-
-        passed_time = (num_passed_questions - 1) * self.user_config.gap_between_requests
-
-        self.last_request_time = timestamp - offset + passed_time
-        self.question_id = num_passed_questions
-        logger.debug(
-            f"Set internal state for user {self.user_config.user_id}, "
-            f"question_id: {self.question_id}, "
-            f"last_request_time: {self.last_request_time}"
-        )
+        self.roundIDs.append(roundID)
+        self.inputs.append(messages)
 
     def step(self, timestamp: float, request_executor: RequestExecutor):
-        if self.user_config.trace is not None:
-            num_rounds = len(self.user_config.trace)
-        else:
-            num_rounds = self.user_config.num_rounds
+        num_rounds = len(self.user_config.trace)
         if (
-            self.question_id >= num_rounds
+            self.round_id >= num_rounds
             and not self.has_unfinished_request
         ):
             self.finished = True
             return
 
         if self.last_request_time is None:
-            self._launch_new_request(timestamp, request_executor)
+            for request_id in range(len(self.user_config.trace[self.round_id]['agent_id'])):
+                self._launch_new_request(timestamp, request_executor, request_id)
+            self.round_id += 1
             return
 
         if timestamp - self.last_request_time > self.user_config.gap_between_requests:
             if self.has_unfinished_request:
                 if timestamp - self.last_unfinished_log > 10:
                     logger.warning(
-                        f"User {self.user_config.user_id} has an unfinished "
-                        "request and unable to fit the QPS requirement."
+                        f"User {self.user_config.user_id} has unfinished "
+                        "requests and unable to fit the QPS requirement."
                     )
                     self.last_unfinished_log = timestamp
                 return
 
-            self._launch_new_request(timestamp, request_executor)
+            for request_id in range(len(self.user_config.trace[self.round_id]['agent_id'])):
+                self._launch_new_request(timestamp, request_executor, request_id)
+            self.round_id += 1
             return
 
     def summary(self) -> pd.DataFrame:
@@ -382,7 +289,7 @@ class UserSession:
         df["ttft"] = self.ttfts
         df["generation_time"] = self.generation_times
         df["user_id"] = self.user_config.user_id
-        df["question_id"] = range(1, len(self.prompt_lengths) + 1)
+        df["round_id"] = self.roundIDs
         df["launch_time"] = self.launch_times
         df["finish_time"] = self.finish_times
         df["agentID"] = self.agentIDs
@@ -413,32 +320,26 @@ class UserSessionManager:
         self.start_time = None
 
         self.traces = []
-        if self.workload_config.trace_file is not None:
-            with open(self.workload_config.trace_file, "r", encoding="utf-8") as f:
-                for idx, line in enumerate(f, start=1):
+        for usr_id, trace_file in enumerate(self.workload_config.trace_file):
+            self.traces.append([])
+            with open(trace_file, "r", encoding="utf-8") as f:
+                for round_id, line in enumerate(f, start=1):
                     line = line.strip()
                     if not line:
                         continue
                     try:
                         record = json.loads(line)
                     except json.JSONDecodeError as e:
-                        print(f"Skipping invalid JSON on line {idx}: {e}")
                         continue
-
-                    self.traces.append(record)
+                    self.traces[usr_id].append(record)
 
         self.continue_flag = True
 
     def _create_user_session(self):
         self.user_id += 1
-        if len(self.traces) > 0:
-            if self.user_id > len(self.traces):
-                return None, False
-            user_config = UserConfig.new_user_config(self.user_id, self.workload_config, self.traces[self.user_id - 1])
-        else:
-            user_config = UserConfig.new_user_config(
-                self.user_id, self.workload_config, None
-            )
+        if self.user_id > len(self.traces):
+            return None, False
+        user_config = UserConfig.new_user_config(self.user_id, self.workload_config, self.traces[self.user_id - 1])
         user_session = UserSession(user_config)
         self.sessions.append(user_session)
         return user_session, True
@@ -571,34 +472,7 @@ class UserSessionManager:
 
 def parse_arguments() -> WorkloadConfig:
     parser = argparse.ArgumentParser(description="Parse benchmark configurations.")
-
-    parser.add_argument(
-        "--shared-system-prompt",
-        type=int,
-        help="Length of the shared system prompt (tokens)",
-    )
-    parser.add_argument(
-        "--user-history-prompt",
-        type=int,
-        help="Length of the user-specific history prompt (tokens)",
-    )
-    parser.add_argument(
-        "--answer-len",
-        type=int,
-        help="Length of the answer in one round",
-    )
-    parser.add_argument(
-        "--num-rounds",
-        type=int,
-        help="Number of rounds in the conversation",
-    )
     parser.add_argument("--num-agents", required=True, type=int)
-    parser.add_argument(
-        "--trace-file",
-        type=str,
-        default=None,
-        help="The trace file to load the workload from",
-    )
     parser.add_argument(
         "--model",
         nargs="+",
@@ -606,17 +480,21 @@ def parse_arguments() -> WorkloadConfig:
         required=True,
         help="One or more model names, e.g. --model m1 m2 m3"
     )
+    parser.add_argument("--user-request-interval", type=float, required=True)
+    parser.add_argument("--new-user-interval", type=float, required=True)
     parser.add_argument(
         "--base-url",
+        nargs="+",
         type=str,
         required=True,
         help="Base URL of the serving engine endpoint",
     )
     parser.add_argument(
-        "--time",
-        type=int,
-        required=False,
-        help="The time to run the simulation in seconds",
+        "--trace-file",
+        type=str,
+        nargs="+",
+        required=True,
+        help="The trace file to load the workload from",
     )
     parser.add_argument(
         "--output",
@@ -631,13 +509,6 @@ def parse_arguments() -> WorkloadConfig:
         default=30,
         help="The time between two summary loggings in seconds",
     )
-    parser.add_argument("--user-request-interval", type=float, required=True)
-    parser.add_argument("--new-user-interval", type=float, required=True)
-    parser.add_argument(
-        "--whole-history",
-        action="store_true",
-        help="Include the whole history in the agentic workload"
-    )
     args = parser.parse_args()
     return args, parser
 
@@ -646,63 +517,27 @@ def main():
 
     args, parser = parse_arguments()
 
-    # 1) If they provided a trace file, they must NOT provide any manual flags
-    manual_flags = {
-        "--shared-system-prompt": args.shared_system_prompt,
-        "--user-history-prompt": args.user_history_prompt,
-        "--answer-len":           args.answer_len,
-        "--num-rounds":           args.num_rounds,
-        "--time": args.time,
-    }
-
-    if args.trace_file:
-        conflicts = [name for name, val in manual_flags.items() if val is not None]
-        if conflicts:
-            parser.error(
-                f"When --trace-file is used, you may not pass: {', '.join(conflicts)}"
-            )
-
-    # 2) If they did NOT provide a trace file, all manual flags become required
-    else:
-        missing = [name for name, val in manual_flags.items() if val is None]
-        if missing:
-            parser.error(
-                f"When --trace-file is omitted, you MUST supply: {', '.join(missing)}"
-            )
-
-    # From here on you know you’re in exactly one mode:
-    if args.trace_file:
-        print("Running in trace‑mode, loading:", args.trace_file)
-    else:
-        print("Running manual‑mode with:",
-            args.shared_system_prompt,
-            args.user_history_prompt,
-            args.answer_len,
-            args.num_rounds,
-            args.time,)
-
     step_interval = 0.1
 
     model = args.model
     if args.num_agents != len(args.model):
         assert len(args.model) == 1
         model = args.model * args.num_agents
-    print(f"Using models: {model}")
+
+    base_url = args.base_url
+    if args.num_agents != len(args.base_url):
+        assert len(args.base_url) == 1
+        base_url = args.base_url * args.num_agents
 
     executor = RequestExecutor(
-        base_url=args.base_url, model=model
+        base_url=base_url, model=model
     )
 
     workload_config = WorkloadConfig(
-        system_prompt_len=args.shared_system_prompt,
-        user_info_len=args.user_history_prompt,
-        answer_len=args.answer_len,
-        num_rounds=args.num_rounds,
+        num_agents=args.num_agents,
         model=model,
         user_request_interval=args.user_request_interval,
         new_user_interval=args.new_user_interval,
-        num_agents=args.num_agents,
-        whole_history=args.whole_history,
         trace_file=args.trace_file,
     )
 
@@ -720,9 +555,6 @@ def main():
             if time.time() - last_summary_time > args.log_interval:
                 manager.summary(last_summary_time, time.time())
                 last_summary_time = time.time()
-
-            if args.time is not None and time.time() - start_time > args.time:
-                break
 
             if not continue_flag:
                 break

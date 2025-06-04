@@ -63,7 +63,7 @@ for c in {1..4}; do # You can change c and s to any value you like.
     TIMESTAMP=$(date +%s)
     OUTPUT_FILE="${OUTPUT_DIR}/bench_c${c}_s${s}_${TIMESTAMP}.json"
     echo "Running benchmark: concurrent=${c}, sequential=${s}"
-    python bench.py --num-users-concurrent "$c" --num-users-sequential "$s" --num-rounds "$NUM_ROUNDS" --model "$MODEL" --base-url "$BASE_URL" --output "$OUTPUT_FILE" --src-dir "$SRC_DIR"
+    python multi-round-qa.py --num-users-concurrent "$c" --num-users-sequential "$s" --num-rounds "$NUM_ROUNDS" --model "$MODEL" --base-url "$BASE_URL" --output "$OUTPUT_FILE" --src-dir "$SRC_DIR"
   done
 done
 ```

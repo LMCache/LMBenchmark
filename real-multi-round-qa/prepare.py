@@ -11,14 +11,14 @@ TOKEN_THRESHOLDS = [
     (131072, "128k"),
     (262144, "256k"),
     (524288, "512k"),
-    (1048576, "1M"),
+    (1048576, "1m"),
 ]
 
-def get_token_category(token_count):
-    for threshold, dirname in TOKEN_THRESHOLDS:
-        if token_count <= threshold:
-            return dirname
-    return None
+def get_largest_under_category(token_count):
+    valid_categories = [(thresh, name) for thresh, name in TOKEN_THRESHOLDS if thresh < token_count]
+    if not valid_categories:
+        return None, None
+    return max(valid_categories, key=lambda x: x[0])
 
 def main():
     parser = argparse.ArgumentParser(description="Download Gutenberg books and classify by token count.")
@@ -43,18 +43,20 @@ def main():
 
             if response.status_code == 200 and "text" in response.headers.get("Content-Type", ""):
                 text = response.text
-                token_count = len(tokenizer.encode(text))
-                category = get_token_category(token_count)
+                token = tokenizer.encode(text)
+                token_count = len(token)
+                threshold, category = get_largest_under_category(token_count)
 
                 if category:
                     category_dir = os.path.join(args.output, category)
                     os.makedirs(category_dir, exist_ok=True)
                     output_path = os.path.join(category_dir, f"{book_id}.txt")
+                    text_truncated = tokenizer.decode(token[:threshold])
                     with open(output_path, "w", encoding="utf-8") as f:
-                        f.write(text)
+                        f.write(text_truncated)
                     print(f"Saved: {output_path} ({token_count} tokens)")
                 else:
-                    print(f"Skipped {book_id}: Too many tokens ({token_count})")
+                    print(f"Skipped {book_id}: Too many tokens or Too small tokens ({token_count})")
 
             else:
                 print(f"Skipped {book_id}: Not plain text or unavailable")

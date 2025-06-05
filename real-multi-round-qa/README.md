@@ -1,12 +1,36 @@
-# Real Multi-Round QA Benchmark
+# CxS: Real Multi-Round QA Benchmark
 
 ## Overview
 
-This benchmark is designed to identify **the maximum number of user sessions ($C\times S$) that can be kept active while maintaining a steady-state TTFT ≤ 2 s (95-th percentile)**. By sweeping the concurrency (C) and sequential (S) independently, it isolates whether compute capacity or KV-cache pressure is the first limiting factor.
+This benchmark is designed to identify **the maximum harmonic mean of user sessions $(C,S)$ that can be kept active while maintaining a steady-state TTFT ≤ 2 s (95-th percentile)**. By sweeping the concurrency ($C$) and sequential ($S$) independently, it isolates whether compute capacity or KV-cache pressure is the first limiting factor.
+
 
 We highly recommend monitoring vLLM/LMCache/GPU/storage metrics at the same time.
 
 This benchmark feeds full‑length novels to your LLM server and asks many follow‑up questions, just like a book critic. It is handy for testing long‑context handling and KV‑cache tools such as LMCache.
+
+The benchmark is called CxS (pronounced six for simplicity), referring to the product of Concurrent $\times$ Sequential users.
+
+### Definition
+
+Let us define the set of candidate pairs:
+
+$$
+\mathcal{D} = \{ (C_i, S_i) \mid \mathrm{TTFT}_{95}^{(i)} \leq 2 \}
+$$
+
+### Objective
+
+More precisely, we aim to find the pair that maximizes the harmonic mean among all candidates in $\mathcal{D}$:
+
+
+$$
+\underset{(C_i, S_i) \in \mathcal{D}}{\arg\max} \left( \frac{2 C_i S_i}{C_i + S_i} \right)
+$$
+
+We use the harmonic mean to compare scores.  
+As a business metric, we report the product, CxS.  
+For example, we say "Our system can keep up to {C×S} user sessions active!"
 
 ## Two simple knobs
 
@@ -88,8 +112,8 @@ $ python plot.py ./bench_dir_vllm vllm.png
 13                     3                     2   0.393902
 14                     3                     1   0.364927
 15                     1                     1   0.379049
-Max (C x S) where TTFT_95 <= 2s: 12
-  => C=4.0, S=3.0
+Max harmonic mean (C,S) where TTFT_95 <= 2s: 3.43
+  => C=4.0, S=3.0, CxS=12.0
 $ python plot.py ./bench_dir_lmcache lmcache.png
     num_users_concurrent  num_users_sequential   ttft_95
 0                      1                     1  0.524989
@@ -108,11 +132,11 @@ $ python plot.py ./bench_dir_lmcache lmcache.png
 13                     4                     2  0.586223
 14                     1                     2  0.477946
 15                     2                     2  0.457463
-Max (C x S) where TTFT_95 <= 2s: 16
-  => C=4.0, S=4.0
+Max harmonic mean (C,S) where TTFT_95 <= 2s: 4.00
+  => C=4.0, S=4.0, CxS=16.0
 ```
 
-LMCache allows 1.3x increase in the number of user sessions kept active at least.
+LMCache allows 1.17x increase in the number of user sessions kept active at least.
 
 Note: LMCache has not yet reached its limit in this case,
 so we can aim to further improve the score by changing C and S.

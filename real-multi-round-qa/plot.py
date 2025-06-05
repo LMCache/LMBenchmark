@@ -72,20 +72,16 @@ def main():
     ax.invert_xaxis()
     plt.savefig(args.output)
 
-    # Max product under 2s TTFT
+    # Max harmonic mean under 2s TTFT
     summary_under_2s = summary_df[summary_df["ttft_95"] <= 2].copy()
-    summary_under_2s["product"] = (
-        summary_under_2s["num_users_concurrent"] * summary_under_2s["num_users_sequential"]
-    )
     if not summary_under_2s.empty:
-        summary_under_2s["product"] = (
-            summary_under_2s["num_users_concurrent"] * summary_under_2s["num_users_sequential"]
+        summary_under_2s["harmonic_mean"] = 2 * summary_under_2s["num_users_concurrent"] * summary_under_2s["num_users_sequential"] / (
+            summary_under_2s["num_users_concurrent"] + summary_under_2s["num_users_sequential"]
         )
-        max_product = summary_under_2s["product"].max()
-        candidates = summary_under_2s[summary_under_2s["product"] == max_product]
-        best_row = candidates.sort_values("num_users_concurrent", ascending=False).iloc[0]
-        print(f"Max (C x S) where TTFT_95 <= 2s: {max_product}")
-        print(f"  => C={best_row['num_users_concurrent']}, S={best_row['num_users_sequential']}")
+        best_row = summary_under_2s.sort_values("harmonic_mean", ascending=False).iloc[0]
+        product = best_row["num_users_concurrent"] * best_row["num_users_sequential"]
+        print(f"Max harmonic mean (C,S) where TTFT_95 <= 2s: {best_row['harmonic_mean']:.2f}")
+        print(f"  => C={best_row['num_users_concurrent']}, S={best_row['num_users_sequential']}, CxS={product}")
     else:
         print("No data points with TTFT_95 <= 2s.")
 

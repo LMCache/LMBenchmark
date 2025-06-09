@@ -151,7 +151,7 @@ async def run_turn(session: ChatSession, client: openai.AsyncOpenAI) -> Result:
 
 async def run_group(args) -> List[Result]:
     client = openai.AsyncOpenAI(base_url=args.base_url, api_key="EMPTY")
-    sessions = [ChatSession(args) for _ in range(args.num_users_sequential)]
+    sessions = [ChatSession(args) for _ in range(args.session_depth)]
     results = []
 
     while any(not s.is_finished() for s in sessions):
@@ -164,14 +164,14 @@ async def run_group(args) -> List[Result]:
     return results
 
 async def run_all_concurrent(args):
-    tasks = [run_group(args) for _ in range(args.num_users_concurrent)]
+    tasks = [run_group(args) for _ in range(args.concurrent)]
     all_results = await asyncio.gather(*tasks)
     return [asdict(r) for group in all_results for r in group]
 
 def parse_args():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--num-users-concurrent", type=int, required=True)
-    parser.add_argument("--num-users-sequential", type=int, required=True)
+    parser.add_argument("-c", "--concurrent", type=int, required=True)
+    parser.add_argument("-s", "--session-depth", type=int, required=True)
     parser.add_argument("--model", type=str, required=True)
     parser.add_argument("--base-url", type=str, required=True)
     parser.add_argument("--num-rounds", type=int, default=10)

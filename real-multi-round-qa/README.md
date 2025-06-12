@@ -4,7 +4,7 @@
 
 This benchmark is designed to explore how TTFT changes across different $(C, S)$ combinations by sweeping concurrency ($C$) and session depth ($S$) independently. This helps isolate whether compute capacity or KV-cache pressure is the primary limiting factor.
 
-We highly recommend monitoring vLLM/LMCache/GPU/storage metrics at the same time.
+We highly recommend monitoring vLLM/LMCache/GPU/storage metrics at the same time. The JSON output from the benchmark includes metrics from vLLM/LMCache.
 
 This benchmark feeds full‑length novels to your LLM server and asks many follow‑up questions, just like a book critic. It is handy for testing long‑context handling and KV‑cache tools such as LMCache.
 
@@ -79,9 +79,9 @@ python prepare.py --output data --model Qwen/Qwen2.5-7B-Instruct-1M # Models use
 
 ```bash
 # Run the benchmark many times
-BASE_URL="http://localhost:8000/v1"
+BASE_URL="http://localhost:8000"
 MODEL="Qwen/Qwen2.5-7B-Instruct-1M"
-NUM_ROUNDS=3
+NUM_ROUNDS=12
 OUTPUT_DIR="bench_dir"
 SRC_DIR="./data/128k"
 mkdir -p "$OUTPUT_DIR"
@@ -96,61 +96,101 @@ for c in {1..4}; do # You can change c and s to any value you like.
 done
 ```
 
+We compare two systems for demo:
+
+System A
+* Model
+  * Qwen/Qwen2.5-7B-Instruct-1M
+* Dataset
+  * 32k
+* CPU/GPU
+  * NVIDIA GH200 480GB
+* vLLM
+  * v0.9.0.1
+  * enable prefix-caching
+  * enable chunked prefill
+* LMCache 
+  * local_cpu: True
+  * max_local_cpu_size: 200
+  * pipelined_backend: True
+  * save_decode_cache: True
+
+System B
+* Model
+  * Qwen/Qwen2.5-7B-Instruct-1M
+* Dataset
+  * 32k
+* CPU/GPU
+  * NVIDIA GH200 480GB
+* vLLM
+  * v0.9.0.1
+  * enable prefix-caching
+  * enable chunked prefill
+* LMCache 
+  * local_cpu: True
+  * max_local_cpu_size: 200
+  * pipelined_backend: True
+  * save_decode_cache: True
+  * local_disk: file:///data/tmp
+  * max_local_disk_size: 400
+* Storage
+  * DDN EXAScaler 2.14.0
+  * stripe count is 8
+  * stripe size is 1MiB
+
 ```bash
 # Plot and Show Result
-$ python plot.py ./bench_dir_vllm vllm.png
-    c  s    ttft_95
-0   4  2   0.498404
-1   4  4  33.565437
-2   4  3   0.794144
-3   1  4   0.311046
-4   2  2   0.406148
-5   2  4   0.459704
-6   2  3   0.326396
-7   1  2   0.411317
-8   3  3   0.378674
-9   2  1   0.445499
-10  3  4  42.531053
-11  1  3   0.455651
-12  4  1   0.504505
-13  3  2   0.393902
-14  3  1   0.364927
-15  1  1   0.379049
-Max harmonic mean (C,S) where TTFT_95 <= 2s: 3.43
-  => C=4.0, S=3.0, CxS=12.0
-$ python plot.py ./bench_dir_lmcache lmcache.png
-    c  s   ttft_95
-0   1  1  0.524989
-1   3  2  0.592148
-2   4  4  1.202544
-3   3  4  1.286755
-4   2  1  0.477370
-5   3  3  0.586793
-6   2  3  0.627655
-7   4  1  0.575724
-8   4  3  1.251918
-9   2  4  0.446477
-10  1  4  0.460711
-11  3  1  0.495073
-12  1  3  0.329389
-13  4  2  0.586223
-14  1  2  0.477946
-15  2  2  0.457463
-Max harmonic mean (C,S) where TTFT_95 <= 2s: 4.00
-  => C=4.0, S=4.0, CxS=16.0
+$ python plot.py lmcache_bench_dir-1749973344 lmcache_with_cpu_200g.png
+     c   s   ttft_95
+0    8  16  2.674693
+1   12  32  3.268448
+2    4  32  2.496206
+3   16  16  3.310291
+4    4   8  0.146159
+5    8  32  2.801732
+6   12  24  3.283783
+7   12  16  3.185047
+8   12   8  0.390896
+9    4  24  0.217809
+10  16   8  3.799740
+11   8   8  0.347083
+12  16  24  3.171192
+13  16  32  3.032414
+14   8  24  3.383691
+15   4  16  0.253737
+Best (C,S) with TTFT_95 ≤ 2 s → C=12.0, S=8.0, HarmonicMean=9.60, C×S=96.0
+Saved: lmcache_with_cpu_200g.png
+$ python plot.py lmcache_bench_dir-1749897431 lmcache_with_cpu_200g_exa_400g.png 
+     c   s   ttft_95
+0    4  16  0.255378
+1    8  24  3.213307
+2   16  24  4.067904
+3    4  24  0.612876
+4    8  32  4.389398
+5    4   8  0.158686
+6   12  24  3.939205
+7   12   8  0.634048
+8    4  32  1.191106
+9   12  32  3.475115
+10  16  16  3.156051
+11   8   8  0.264291
+12  12  16  2.739532
+13  16  32  3.853057
+14   8  16  1.424959
+15  16   8  3.470811
+Best (C,S) with TTFT_95 ≤ 2 s → C=8.0, S=16.0, HarmonicMean=10.67, C×S=128.0
+Saved: lmcache_with_cpu_200g_exa_400g.png
 ```
-
-LMCache allows 1.17x increase in the number of user sessions kept active at least.
-
-Note: LMCache has not yet reached its limit in this case,
-so we can aim to further improve the score by changing C and S.
+This result shows that adding external storage (DDN EXAScaler) as a tier in the KV cache can increase the number of active sessions.
 
 ## Viz
 
-vllm.png
+The white dashed line indicates the TTFT = 2s boundary.
 
-![vLLM Plot](vllm.png)
+System A result:
 
-lmcache.png
+![LMCache+CPU Plot](lmcache_with_cpu_200g.png)
 
-![LMCache Plot](lmcache.png)
+System B result:
+
+![LMCache+CPU+Storage400g Plot](lmcache_with_cpu_200g_exa_400g.png)

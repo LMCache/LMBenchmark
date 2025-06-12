@@ -8,6 +8,7 @@ import openai
 from dataclasses import dataclass, asdict
 from typing import List
 import json
+import requests
 
 FIRST_PROMPT = "Read and summarize this novel.\n\n{}"
 FOLLOWUP_PROMPTS = [
@@ -57,11 +58,13 @@ FOLLOWUP_PROMPTS = [
 class Result:
     session_id: str
     turn: int
+    start_time: float
     latency: float
     ttft: float
     generation_time: float
     prompt_tokens: int
     completion_tokens: int
+    metrics: str
     status: str
 
 class ChatSession:
@@ -98,7 +101,7 @@ class ChatSession:
         self.messages.append({"role": "assistant", "content": content})
         self.turns += 1
 
-async def run_turn(session: ChatSession, client: openai.AsyncOpenAI) -> Result:
+async def run_turn(session: ChatSession, client: openai.AsyncOpenAI, base_url: str) -> Result:
     prompt = session.get_next_prompt()
     session.append_user_message(prompt)
 
@@ -109,6 +112,10 @@ async def run_turn(session: ChatSession, client: openai.AsyncOpenAI) -> Result:
     prompt_tokens = 0
 
     print(f"Session {session.session_id}, Turn {session.turns}: {prompt[:50]}...")
+
+    resp = requests.get(f"{base_url}/metrics")
+    resp.raise_for_status()
+
     response = await client.chat.completions.create(
         model=session.model,
         messages=session.messages,
@@ -137,20 +144,22 @@ async def run_turn(session: ChatSession, client: openai.AsyncOpenAI) -> Result:
     result = Result(
         session_id=session.session_id,
         turn=session.turns,
+        start_time=start_time,
         latency=latency,
         ttft=ttft,
         generation_time=generation_time,
         prompt_tokens=prompt_tokens,
         completion_tokens=completion_tokens,
+        metrics=resp.text,
         status="success",
     )
-    
+
     session.append_assistant_message(content)
 
     return result
 
 async def run_group(args) -> List[Result]:
-    client = openai.AsyncOpenAI(base_url=args.base_url, api_key="EMPTY")
+    client = openai.AsyncOpenAI(base_url=f"{args.base_url}/v1", api_key="EMPTY")
     sessions = [ChatSession(args) for _ in range(args.session_depth)]
     results = []
 
@@ -158,7 +167,7 @@ async def run_group(args) -> List[Result]:
         for session in sessions:
             if session.is_finished():
                 continue
-            result = await run_turn(session, client)
+            result = await run_turn(session, client, args.base_url)
             results.append(result)
 
     return results

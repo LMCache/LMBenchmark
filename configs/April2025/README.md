@@ -135,4 +135,4 @@ This will start a Dynamo-based router at http://localhost:8000/v1, serving eithe
 
 # Model Selection
 
-For ShareGPT and short-input-short-output traces, use the 70B model with 2*A100 (80G). For the long-input-long-output trace, use the 8B model with 1*A100 (40G).
+For ShareGPT and short-input-short-output traces, use the 70B model with 2\*A100 (80G). For the long-input-long-output trace, use the 8B model with 1\*A100 (40G).

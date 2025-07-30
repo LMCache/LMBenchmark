@@ -173,7 +173,7 @@ class RequestExecutor:
             else:
                 # Use completions API
                 # Convert messages to a prompt string
-                prompt = "\n".join([f"{msg['role'].upper()}: {msg['content']}" for msg in messages])
+                prompt = "\n".join([f"{msg['role'].upper()}: {msg['content']}" for msg in messages]) + "\nASSISTANT:"
                 
                 response = await self.client.completions.create(
                     model=self.model,
@@ -213,7 +213,7 @@ class RequestExecutor:
                             stream=False,
                         )
                     else:
-                        prompt = "\n".join([f"{msg['role'].upper()}: {msg['content']}" for msg in messages])
+                        prompt = "\n".join([f"{msg['role'].upper()}: {msg['content']}" for msg in messages]) + "\nASSISTANT:"
                         final_response = await self.client.completions.create(
                             model=self.model,
                             prompt=prompt,

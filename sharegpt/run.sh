@@ -15,7 +15,9 @@ KEY=$3
 
 # If QPS values are provided, use them; otherwise use default
 if [[ $# -gt 3 ]]; then
-    QPS_VALUES=("${@:4}")
+    # Join all remaining arguments and split by spaces
+    all_qps="${*:4}"
+    IFS=' ' read -ra QPS_VALUES <<< "$all_qps"
 else
     QPS_VALUES=(1.34)  # Default QPS value
 fi

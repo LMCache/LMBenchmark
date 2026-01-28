@@ -10,7 +10,9 @@ This benchmark feeds full‑length novels to your LLM server and asks many follo
 
 The benchmark is called CxS (pronounced six for simplicity), referring to the product of Concurrent $\times$ Session Depth.
 
-## Two simple knobs
+## Two execution modes
+
+### Fixed workload mode (`--concurrent`)
 
 | Option | What it means |
 | ---- | ---- |
@@ -20,6 +22,24 @@ The benchmark is called CxS (pronounced six for simplicity), referring to the pr
 You can:
 * raise $C$ to test compute-side capability (higher GPU utilization; total KV footprint also rises).
 * raise $S$ to test KV-cache pressure (larger resident KV per GPU, little change in instantaneous GPU utilization).
+
+### Constant load mode (`--num-users`)
+
+| Option | What it means |
+| ---- | ---- |
+| `--num-users` (N) | Number of concurrent users maintained at all times. |
+| `--time` | Optional. Duration to run the benchmark (runs forever if not set). |
+
+When a user finishes their conversation, a new user is immediately created to maintain constant load. This mode is useful for stress testing and simulating production traffic patterns.
+
+## Additional options
+
+| Option | Default | Description |
+| ---- | ---- | ---- |
+| `--timeout` | None | Request timeout in seconds (no timeout by default) |
+| `--skip-ssl-verify` | false | Skip SSL certificate verification |
+| `--gap-between-requests` | 0 | Delay in seconds between requests |
+| `--time` | None | Time limit in seconds for the entire benchmark run |
 
 ## Execution model
 

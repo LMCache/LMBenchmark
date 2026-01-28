@@ -5,10 +5,10 @@ import uuid
 import asyncio
 import argparse
 import openai
+import httpx
 from dataclasses import dataclass, asdict
 from typing import List
 import json
-import requests
 
 FIRST_PROMPT = "Read and summarize this novel.\n\n{}"
 FOLLOWUP_PROMPTS = [
@@ -66,6 +66,9 @@ class Result:
     completion_tokens: int
     metrics: str
     status: str
+    error: str
+    itl: float
+    throughput: float
 
 class ChatSession:
     def __init__(self, args):
@@ -101,7 +104,7 @@ class ChatSession:
         self.messages.append({"role": "assistant", "content": content})
         self.turns += 1
 
-async def run_turn(session: ChatSession, client: openai.AsyncOpenAI, base_url: str) -> Result:
+async def run_turn(session: ChatSession, client: openai.AsyncOpenAI, http_client: httpx.AsyncClient, base_url: str, gap: float) -> Result:
     prompt = session.get_next_prompt()
     session.append_user_message(prompt)
 
@@ -110,36 +113,49 @@ async def run_turn(session: ChatSession, client: openai.AsyncOpenAI, base_url: s
     content = ""
     completion_tokens = 0
     prompt_tokens = 0
+    success = True
+    error = ""
 
     print(f"Session {session.session_id}, Turn {session.turns}: {prompt[:50]}...")
 
-    resp = requests.get(f"{base_url}/metrics")
-    resp.raise_for_status()
+    try:
+        resp = await http_client.get(f"{base_url}/metrics")
+        metrics = resp.text
+    except Exception:
+        metrics = ""
 
-    response = await client.chat.completions.create(
-        model=session.model,
-        messages=session.messages,
-        stream=True,
-        max_tokens=session.answer_len,
-        temperature=0,
-        stream_options={"include_usage": True},
-    )
+    try:
+        response = await client.chat.completions.create(
+            model=session.model,
+            messages=session.messages,
+            stream=True,
+            max_tokens=session.answer_len,
+            temperature=0,
+            stream_options={"include_usage": True},
+        )
 
-    async for chunk in response:
-        if not chunk.choices:
-            continue
-        delta = chunk.choices[0].delta.content
-        if delta:
-            if first_token_time is None:
-                first_token_time = time.time()
-            content += delta
+        async for chunk in response:
+            if not chunk.choices:
+                continue
+            delta = chunk.choices[0].delta.content
+            if delta:
+                if first_token_time is None:
+                    first_token_time = time.time()
+                content += delta
+
+        completion_tokens = chunk.usage.completion_tokens
+        prompt_tokens = chunk.usage.prompt_tokens
+    except Exception as e:
+        print(f"Request failed: {e}")
+        first_token_time = time.time()
+        success = False
+        error = str(e)
 
     ttft = first_token_time - start_time if first_token_time else 0.0
     generation_time = time.time() - first_token_time if first_token_time else 0.0
     latency = time.time() - start_time
-
-    completion_tokens = chunk.usage.completion_tokens
-    prompt_tokens = chunk.usage.prompt_tokens
+    itl = generation_time / completion_tokens if completion_tokens > 0 else 0.0
+    throughput = completion_tokens / generation_time if generation_time > 0 else 0.0
 
     result = Result(
         session_id=session.session_id,
@@ -150,48 +166,101 @@ async def run_turn(session: ChatSession, client: openai.AsyncOpenAI, base_url: s
         generation_time=generation_time,
         prompt_tokens=prompt_tokens,
         completion_tokens=completion_tokens,
-        metrics=resp.text,
-        status="success",
+        metrics=metrics,
+        status="success" if success else "failed",
+        error=error,
+        itl=itl,
+        throughput=throughput,
     )
 
     session.append_assistant_message(content)
 
+    if gap > 0:
+        await asyncio.sleep(gap)
+
     return result
 
-async def run_group(args) -> List[Result]:
-    client = openai.AsyncOpenAI(base_url=f"{args.base_url}/v1", api_key="EMPTY")
+async def run_group(args, http_client: httpx.AsyncClient, start_time: float) -> List[Result]:
+    client = openai.AsyncOpenAI(base_url=f"{args.base_url}/v1", api_key="EMPTY", http_client=http_client)
     sessions = [ChatSession(args) for _ in range(args.session_depth)]
     results = []
 
     while any(not s.is_finished() for s in sessions):
+        if args.time is not None and time.time() - start_time > args.time:
+            break
         for session in sessions:
             if session.is_finished():
                 continue
-            result = await run_turn(session, client, args.base_url)
+            result = await run_turn(session, client, http_client, args.base_url, args.gap_between_requests)
             results.append(result)
 
     return results
 
+async def run_user(args, http_client: httpx.AsyncClient, client: openai.AsyncOpenAI, start_time: float, results: List[Result]):
+    """Run a single user session, replacing with new session when finished (constant load mode)."""
+    while True:
+        if args.time is not None and time.time() - start_time > args.time:
+            break
+        session = ChatSession(args)
+        while not session.is_finished():
+            if args.time is not None and time.time() - start_time > args.time:
+                return
+            result = await run_turn(session, client, http_client, args.base_url, args.gap_between_requests)
+            results.append(result)
+
 async def run_all_concurrent(args):
-    tasks = [run_group(args) for _ in range(args.concurrent)]
-    all_results = await asyncio.gather(*tasks)
-    return [asdict(r) for group in all_results for r in group]
+    http_client = httpx.AsyncClient(
+        timeout=args.timeout,
+        verify=not args.skip_ssl_verify,
+    )
+    try:
+        start_time = time.time()
+        tasks = [run_group(args, http_client, start_time) for _ in range(args.concurrent)]
+        all_results = await asyncio.gather(*tasks)
+        return [asdict(r) for group in all_results for r in group]
+    finally:
+        await http_client.aclose()
+
+async def run_all_num_users(args):
+    http_client = httpx.AsyncClient(
+        timeout=args.timeout,
+        verify=not args.skip_ssl_verify,
+    )
+    try:
+        start_time = time.time()
+        client = openai.AsyncOpenAI(base_url=f"{args.base_url}/v1", api_key="EMPTY", http_client=http_client)
+        all_results = [[] for _ in range(args.num_users)]
+        tasks = [run_user(args, http_client, client, start_time, all_results[i]) for i in range(args.num_users)]
+        await asyncio.gather(*tasks)
+        return [asdict(r) for user_results in all_results for r in user_results]
+    finally:
+        await http_client.aclose()
 
 def parse_args():
     parser = argparse.ArgumentParser()
-    parser.add_argument("-c", "--concurrent", type=int, required=True)
-    parser.add_argument("-s", "--session-depth", type=int, required=True)
+    group = parser.add_mutually_exclusive_group(required=True)
+    group.add_argument("-c", "--concurrent", type=int, help="Number of parallel threads (fixed workload mode)")
+    group.add_argument("-n", "--num-users", type=int, help="Number of concurrent users (constant load mode)")
+    parser.add_argument("-s", "--session-depth", type=int, default=1, help="Sessions per thread (only for --concurrent mode)")
     parser.add_argument("--model", type=str, required=True)
     parser.add_argument("--base-url", type=str, required=True)
     parser.add_argument("--num-rounds", type=int, default=10)
     parser.add_argument("--src-dir", type=str, default="gutenberg/8k")
     parser.add_argument("--answer-len", type=int, default=512)
     parser.add_argument("--output", type=str, default="summary.csv")
+    parser.add_argument("--timeout", type=float, default=None)
+    parser.add_argument("--skip-ssl-verify", action="store_true")
+    parser.add_argument("--gap-between-requests", type=float, default=0.0)
+    parser.add_argument("--time", type=float, default=None, help="Time limit in seconds")
     return parser.parse_args()
 
 def main():
     args = parse_args()
-    results = asyncio.run(run_all_concurrent(args))
+    
+    if args.num_users is not None:
+        results = asyncio.run(run_all_num_users(args))
+    else:
+        results = asyncio.run(run_all_concurrent(args))
     output_data = {
         "params": vars(args),
         "results": results,
